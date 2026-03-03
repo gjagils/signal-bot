@@ -9,10 +9,11 @@ services:
 
   signal-bot:
     image: ghcr.io/gjagils/signal-bot:latest
-    env_file:
-      - stack.env
     environment:
       - SIGNAL_API_URL=http://signal-cli-rest-api:8080
+      - PHONE_NUMBER=${PHONE_NUMBER}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - POLL_INTERVAL=${POLL_INTERVAL:-5}
     depends_on:
       - signal-cli-rest-api
     restart: unless-stopped
