@@ -53,7 +53,7 @@ jobs:
           response=$(curl -s -w "\n%{http_code}" -X PUT \
             -H "X-API-Key: ${{ secrets.PORTAINER_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            "${{ secrets.PORTAINER_URL }}/api/stacks/${{ secrets.PORTAINER_STACK_ID }}/git/redeploy?endpointId=1" \
+            "${{ secrets.PORTAINER_URL }}/api/stacks/${{ secrets.PORTAINER_STACK_ID }}/git/redeploy?endpointId=${{ secrets.PORTAINER_ENDPOINT_ID }}" \
             -d "$payload")
 
           http_code=$(echo "$response" | tail -1)
