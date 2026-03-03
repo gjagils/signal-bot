@@ -73,6 +73,51 @@ def extract_topic(message_text: str) -> str | None:
     return None
 
 
+def accept_pending_invitations():
+    try:
+        resp = requests.get(
+            f"{SIGNAL_API_URL}/v1/groups/{PHONE_NUMBER}",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        groups = resp.json() or []
+        for group in groups:
+            group_id = group.get("id", "")
+            if not group_id:
+                continue
+
+            # pendingMembers can be a list of strings or objects with a "number" field
+            pending = group.get("pendingMembers", [])
+            is_pending = any(
+                (isinstance(m, str) and m == PHONE_NUMBER)
+                or (isinstance(m, dict) and m.get("number") == PHONE_NUMBER)
+                for m in pending
+            )
+
+            if is_pending:
+                group_name = group.get("name", group_id)
+                log.info("Uitnodiging gevonden voor groep '%s', accepteren...", group_name)
+                try:
+                    accept_resp = requests.post(
+                        f"{SIGNAL_API_URL}/v1/groups/{PHONE_NUMBER}/{group_id}/accept-invitation",
+                        timeout=10,
+                    )
+                    if accept_resp.ok:
+                        log.info("Uitnodiging geaccepteerd voor groep: %s", group_name)
+                    else:
+                        log.warning(
+                            "Kon uitnodiging niet accepteren (HTTP %s): %s",
+                            accept_resp.status_code,
+                            accept_resp.text,
+                        )
+                except requests.RequestException as e:
+                    log.warning("Fout bij accepteren uitnodiging voor '%s': %s", group.get("name", group_id), e)
+    except requests.RequestException as e:
+        log.warning("Fout bij ophalen groepen: %s", e)
+    except Exception as e:
+        log.error("Onverwachte fout bij uitnodigingscheck: %s", e)
+
+
 def process_envelope(envelope: dict):
     data_message = envelope.get("dataMessage", {})
     if not data_message:
@@ -114,7 +159,13 @@ def process_envelope(envelope: dict):
 
 def main():
     log.info("Signal bot gestart. Luistert op %s", PHONE_NUMBER)
+    last_invitation_check = 0
     while True:
+        now = time.time()
+        if now - last_invitation_check >= 60:
+            accept_pending_invitations()
+            last_invitation_check = now
+
         try:
             messages = receive_messages()
             for msg in messages:
