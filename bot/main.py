@@ -18,7 +18,7 @@ client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 def receive_messages():
     resp = requests.get(
         f"{SIGNAL_API_URL}/v1/receive/{PHONE_NUMBER}",
-        timeout=10,
+        timeout=30,
     )
     resp.raise_for_status()
     return resp.json() or []
