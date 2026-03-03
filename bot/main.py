@@ -85,9 +85,15 @@ def process_envelope(envelope: dict):
 
     group_info = data_message.get("groupInfo", {})
     group_id = group_info.get("groupId", "")
+    sender = envelope.get("sourceNumber") or envelope.get("source", "")
 
-    if not group_id:
-        log.info("Keyword buiten groep ontvangen, wordt genegeerd.")
+    if group_id:
+        recipient = f"group.{group_id}"
+    elif sender:
+        recipient = sender
+        log.info("Direct bericht ontvangen van %s", sender)
+    else:
+        log.warning("Geen groep of afzender gevonden, wordt genegeerd.")
         return
 
     log.info("Topic ontvangen: %s", topic)
@@ -99,7 +105,6 @@ def process_envelope(envelope: dict):
         return
 
     response_text = f"📋 *{topic}*\n\n{questions}"
-    recipient = f"group.{group_id}"
 
     try:
         send_message(response_text, recipient)
