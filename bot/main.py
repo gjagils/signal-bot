@@ -81,37 +81,39 @@ def accept_pending_invitations():
         )
         resp.raise_for_status()
         groups = resp.json() or []
+        log.info("Groepscheck: %d groepen gevonden", len(groups))
         for group in groups:
             group_id = group.get("id", "")
+            group_name = group.get("name", group_id)
             if not group_id:
                 continue
 
-            # pendingMembers can be a list of strings or objects with a "number" field
-            pending = group.get("pendingMembers", [])
-            is_pending = any(
-                (isinstance(m, str) and m == PHONE_NUMBER)
-                or (isinstance(m, dict) and m.get("number") == PHONE_NUMBER)
-                for m in pending
+            log.info(
+                "Groep '%s': members=%s pendingMembers=%s",
+                group_name,
+                group.get("members"),
+                group.get("pendingMembers"),
             )
 
-            if is_pending:
-                group_name = group.get("name", group_id)
-                log.info("Uitnodiging gevonden voor groep '%s', accepteren...", group_name)
-                try:
-                    accept_resp = requests.post(
-                        f"{SIGNAL_API_URL}/v1/groups/{PHONE_NUMBER}/{group_id}/accept-invitation",
-                        timeout=10,
+            # Try to accept for every group — if already a member the API returns
+            # a non-2xx response (harmless). If there's a pending invitation it accepts.
+            # This handles UUIDs and phone numbers alike without needing to match.
+            try:
+                accept_resp = requests.post(
+                    f"{SIGNAL_API_URL}/v1/groups/{PHONE_NUMBER}/{group_id}/accept-invitation",
+                    timeout=10,
+                )
+                if accept_resp.ok:
+                    log.info("Uitnodiging geaccepteerd voor groep: %s", group_name)
+                else:
+                    log.info(
+                        "Groep '%s' accept-invitation: HTTP %s %s",
+                        group_name,
+                        accept_resp.status_code,
+                        accept_resp.text[:200],
                     )
-                    if accept_resp.ok:
-                        log.info("Uitnodiging geaccepteerd voor groep: %s", group_name)
-                    else:
-                        log.warning(
-                            "Kon uitnodiging niet accepteren (HTTP %s): %s",
-                            accept_resp.status_code,
-                            accept_resp.text,
-                        )
-                except requests.RequestException as e:
-                    log.warning("Fout bij accepteren uitnodiging voor '%s': %s", group.get("name", group_id), e)
+            except requests.RequestException as e:
+                log.warning("Fout bij groep '%s': %s", group_name, e)
     except requests.RequestException as e:
         log.warning("Fout bij ophalen groepen: %s", e)
     except Exception as e:
