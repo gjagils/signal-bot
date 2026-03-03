@@ -99,15 +99,16 @@ def accept_pending_invitations():
             # a non-2xx response (harmless). If there's a pending invitation it accepts.
             # This handles UUIDs and phone numbers alike without needing to match.
             try:
-                accept_resp = requests.post(
-                    f"{SIGNAL_API_URL}/v1/groups/{PHONE_NUMBER}/{group_id}/accept-invitation",
+                accept_resp = requests.put(
+                    f"{SIGNAL_API_URL}/v1/groups/{PHONE_NUMBER}/{group_id}",
+                    json={},
                     timeout=30,
                 )
                 if accept_resp.ok:
-                    log.info("Uitnodiging geaccepteerd voor groep: %s", group_name)
+                    log.info("Groep '%s' bijgewerkt/uitnodiging geaccepteerd", group_name)
                 else:
                     log.info(
-                        "Groep '%s' accept-invitation: HTTP %s %s",
+                        "Groep '%s' PUT: HTTP %s %s",
                         group_name,
                         accept_resp.status_code,
                         accept_resp.text[:200],
