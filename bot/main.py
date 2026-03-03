@@ -73,6 +73,21 @@ def extract_topic(message_text: str) -> str | None:
     return None
 
 
+def setup_profile():
+    try:
+        resp = requests.put(
+            f"{SIGNAL_API_URL}/v1/profiles/{PHONE_NUMBER}",
+            json={"name": "Signal Bot"},
+            timeout=30,
+        )
+        if resp.ok:
+            log.info("Profiel ingesteld")
+        else:
+            log.warning("Kon profiel niet instellen (HTTP %s): %s", resp.status_code, resp.text[:200])
+    except requests.RequestException as e:
+        log.warning("Fout bij instellen profiel: %s", e)
+
+
 def accept_pending_invitations():
     try:
         resp = requests.get(
@@ -162,6 +177,7 @@ def process_envelope(envelope: dict):
 
 def main():
     log.info("Signal bot gestart. Luistert op %s", PHONE_NUMBER)
+    setup_profile()
     last_invitation_check = 0
     while True:
         now = time.time()
