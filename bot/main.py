@@ -77,7 +77,7 @@ def accept_pending_invitations():
     try:
         resp = requests.get(
             f"{SIGNAL_API_URL}/v1/groups/{PHONE_NUMBER}",
-            timeout=10,
+            timeout=30,
         )
         resp.raise_for_status()
         groups = resp.json() or []
@@ -101,7 +101,7 @@ def accept_pending_invitations():
             try:
                 accept_resp = requests.post(
                     f"{SIGNAL_API_URL}/v1/groups/{PHONE_NUMBER}/{group_id}/accept-invitation",
-                    timeout=10,
+                    timeout=30,
                 )
                 if accept_resp.ok:
                     log.info("Uitnodiging geaccepteerd voor groep: %s", group_name)
