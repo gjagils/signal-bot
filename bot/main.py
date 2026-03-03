@@ -33,7 +33,7 @@ def send_message(message: str, recipient: str):
     resp = requests.post(
         f"{SIGNAL_API_URL}/v2/send",
         json=payload,
-        timeout=10,
+        timeout=30,
     )
     resp.raise_for_status()
     log.info("Bericht verstuurd naar %s", recipient)
