@@ -1,5 +1,6 @@
 import os
 import time
+import base64
 import logging
 import requests
 import anthropic
@@ -157,7 +158,13 @@ def process_envelope(envelope: dict):
     sender = envelope.get("sourceNumber") or envelope.get("source", "")
 
     if group_id:
-        recipient = f"group.{group_id}"
+        # API verwacht base64url zonder padding; ontvangen groupId is standaard base64 met '='
+        try:
+            raw = base64.b64decode(group_id + "==")
+            group_id_safe = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+        except Exception:
+            group_id_safe = group_id.rstrip("=")
+        recipient = f"group.{group_id_safe}"
         log.info("Groep ID uit bericht: %r → recipient: %r", group_id, recipient)
     elif sender:
         recipient = sender
