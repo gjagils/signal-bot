@@ -14,6 +14,7 @@ services:
       - PHONE_NUMBER=${PHONE_NUMBER}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - POLL_INTERVAL=${POLL_INTERVAL:-5}
+      - GROUP_INVITE_URI=${GROUP_INVITE_URI:-}
     depends_on:
       - signal-cli-rest-api
     restart: unless-stopped
