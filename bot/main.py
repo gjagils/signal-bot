@@ -117,6 +117,52 @@ def log_group_endpoints():
     log.info("Geen swagger gevonden")
 
 
+def get_group_recipient(raw_group_id: str) -> str:
+    """Resolve the exact recipient string for a group by querying the groups list.
+
+    The groupId in received messages may use a different encoding than what
+    /v2/send expects. Fetching the API's group list gives us the canonical ID.
+    Falls back to a best-effort encoding conversion if the lookup fails.
+    """
+    try:
+        resp = requests.get(
+            f"{SIGNAL_API_URL}/v1/groups/{PHONE_NUMBER}",
+            timeout=30,
+        )
+        if resp.ok:
+            groups = resp.json() or []
+            log.info("Groepen opgehaald: %d gevonden", len(groups))
+            for group in groups:
+                api_id = group.get("id", "")
+                log.info("  Groep: id=%r name=%r", api_id, group.get("name", ""))
+                # The API id is typically "group.<base64url-no-padding>"
+                # The received groupId is standard base64 with padding.
+                # Normalise both to raw bytes for comparison.
+                try:
+                    raw_received = base64.b64decode(raw_group_id + "==")
+                    # Strip "group." prefix and normalise the API id
+                    api_id_b64 = api_id.removeprefix("group.")
+                    raw_api = base64.urlsafe_b64decode(api_id_b64 + "==")
+                    if raw_received == raw_api:
+                        log.info("Match gevonden: %r", api_id)
+                        return api_id
+                except Exception:
+                    if api_id.endswith(raw_group_id.rstrip("=")):
+                        return api_id
+        else:
+            log.warning("Groepen ophalen mislukt HTTP %s: %s", resp.status_code, resp.text[:200])
+    except Exception as e:
+        log.warning("Fout bij ophalen groepen: %s", e)
+
+    # Fallback: best-effort conversion
+    try:
+        raw = base64.b64decode(raw_group_id + "==")
+        safe = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+        return f"group.{safe}"
+    except Exception:
+        return f"group.{raw_group_id.rstrip('=')}"
+
+
 def join_via_link():
     """Join the group via an invite link (signal-group:// URI)."""
     if not GROUP_INVITE_URI:
@@ -158,13 +204,7 @@ def process_envelope(envelope: dict):
     sender = envelope.get("sourceNumber") or envelope.get("source", "")
 
     if group_id:
-        # API verwacht base64url zonder padding; ontvangen groupId is standaard base64 met '='
-        try:
-            raw = base64.b64decode(group_id + "==")
-            group_id_safe = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
-        except Exception:
-            group_id_safe = group_id.rstrip("=")
-        recipient = f"group.{group_id_safe}"
+        recipient = get_group_recipient(group_id)
         log.info("Groep ID uit bericht: %r → recipient: %r", group_id, recipient)
     elif sender:
         recipient = sender
