@@ -31,11 +31,14 @@ def send_message(message: str, recipient: str):
         "number": PHONE_NUMBER,
         "recipients": [recipient],
     }
+    log.info("Versturen naar recipient: %r", recipient)
     resp = requests.post(
         f"{SIGNAL_API_URL}/v2/send",
         json=payload,
         timeout=30,
     )
+    if not resp.ok:
+        log.error("Send mislukt HTTP %s: %s", resp.status_code, resp.text[:500])
     resp.raise_for_status()
     log.info("Bericht verstuurd naar %s", recipient)
 
@@ -155,6 +158,7 @@ def process_envelope(envelope: dict):
 
     if group_id:
         recipient = f"group.{group_id}"
+        log.info("Groep ID uit bericht: %r → recipient: %r", group_id, recipient)
     elif sender:
         recipient = sender
         log.info("Direct bericht ontvangen van %s", sender)
