@@ -139,11 +139,11 @@ def get_group_recipient(raw_group_id: str) -> str:
                 # The received groupId is standard base64 with padding.
                 # Normalise both to raw bytes for comparison.
                 try:
-                    raw_received = base64.b64decode(raw_group_id + "==")
-                    # Strip "group." prefix and normalise the API id
-                    api_id_b64 = api_id.removeprefix("group.")
-                    raw_api = base64.urlsafe_b64decode(api_id_b64 + "==")
-                    if raw_received == raw_api:
+                    # The API id is base64url(groupId_string_bytes), i.e. double-encoded.
+                    # Decode the API id back to the original groupId string and compare.
+                    api_id_inner = api_id.removeprefix("group.")
+                    decoded_str = base64.urlsafe_b64decode(api_id_inner + "==").decode("ascii")
+                    if decoded_str.rstrip("=") == raw_group_id.rstrip("="):
                         log.info("Match gevonden: %r", api_id)
                         return api_id
                 except Exception:
