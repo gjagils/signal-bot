@@ -95,10 +95,26 @@ def setup_profile():
         log.warning("Fout bij instellen profiel: %s", e)
 
 
+def log_group_endpoints():
+    """Fetch swagger and log available group-related endpoints."""
+    for path in ["/v1/api-docs", "/swagger.yaml", "/api/swagger.json"]:
+        try:
+            resp = requests.get(f"{SIGNAL_API_URL}{path}", timeout=10)
+            if resp.ok:
+                try:
+                    docs = resp.json()
+                    paths = [p for p in docs.get("paths", {}) if "group" in p.lower()]
+                    log.info("Group endpoints in swagger: %s", paths)
+                except Exception:
+                    log.info("Swagger op %s (niet JSON): %s", path, resp.text[:300])
+                return
+        except requests.RequestException:
+            pass
+    log.info("Geen swagger gevonden")
+
+
 def join_via_link():
-    """Join the group via an invite link (signal-group:// URI).
-    More reliable than accepting a direct invitation for signal-cli V2 groups.
-    """
+    """Join the group via an invite link (signal-group:// URI)."""
     if not GROUP_INVITE_URI:
         return
 
@@ -107,18 +123,20 @@ def join_via_link():
     if uri.startswith("https://signal.group/#"):
         uri = "signal-group://#" + uri.split("#", 1)[1]
 
-    try:
-        resp = requests.post(
-            f"{SIGNAL_API_URL}/v1/groups/join/{PHONE_NUMBER}",
-            json={"uri": uri},
-            timeout=30,
-        )
-        if resp.ok:
-            log.info("Groep succesvol gejoined via link")
-        else:
-            log.info("Join via link: HTTP %s %s", resp.status_code, resp.text[:200])
-    except requests.RequestException as e:
-        log.warning("Fout bij joinen via groepslink: %s", e)
+    log.info("Groepslink join proberen met URI: %s...", uri[:40])
+
+    # Try both known endpoint variants
+    for endpoint in [
+        f"{SIGNAL_API_URL}/v1/groups/join/{PHONE_NUMBER}",
+        f"{SIGNAL_API_URL}/v1/groups/{PHONE_NUMBER}/join",
+    ]:
+        try:
+            resp = requests.post(endpoint, json={"uri": uri}, timeout=30)
+            log.info("Join via %s: HTTP %s %s", endpoint, resp.status_code, resp.text[:200])
+            if resp.ok:
+                return
+        except requests.RequestException as e:
+            log.warning("Fout bij %s: %s", endpoint, e)
 
 
 def process_envelope(envelope: dict):
@@ -163,6 +181,7 @@ def process_envelope(envelope: dict):
 def main():
     log.info("Signal bot gestart. Luistert op %s", PHONE_NUMBER)
     setup_profile()
+    log_group_endpoints()
     join_via_link()
 
     while True:
