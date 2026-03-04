@@ -40,13 +40,15 @@ jobs:
           payload=$(jq -n \
             --arg phone "${{ secrets.PHONE_NUMBER }}" \
             --arg api_key "${{ secrets.ANTHROPIC_API_KEY }}" \
+            --arg group_uri "${{ secrets.GROUP_INVITE_URI }}" \
             '{
               pullImage: true,
               prune: false,
               env: [
                 {name: "PHONE_NUMBER", value: $phone},
                 {name: "ANTHROPIC_API_KEY", value: $api_key},
-                {name: "POLL_INTERVAL", value: "5"}
+                {name: "POLL_INTERVAL", value: "5"},
+                {name: "GROUP_INVITE_URI", value: $group_uri}
               ]
             }')
 

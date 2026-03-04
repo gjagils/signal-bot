@@ -11,6 +11,7 @@ SIGNAL_API_URL = os.environ["SIGNAL_API_URL"]
 PHONE_NUMBER = os.environ["PHONE_NUMBER"]
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "5"))
+GROUP_INVITE_URI = os.environ.get("GROUP_INVITE_URI", "")
 
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -88,52 +89,30 @@ def setup_profile():
         log.warning("Fout bij instellen profiel: %s", e)
 
 
-def accept_pending_invitations():
+def join_via_link():
+    """Join the group via an invite link (signal-group:// URI).
+    More reliable than accepting a direct invitation for signal-cli V2 groups.
+    """
+    if not GROUP_INVITE_URI:
+        return
+
+    # Convert https://signal.group/#... to signal-group://#...
+    uri = GROUP_INVITE_URI
+    if uri.startswith("https://signal.group/#"):
+        uri = "signal-group://#" + uri.split("#", 1)[1]
+
     try:
-        resp = requests.get(
-            f"{SIGNAL_API_URL}/v1/groups/{PHONE_NUMBER}",
+        resp = requests.post(
+            f"{SIGNAL_API_URL}/v1/groups/join/{PHONE_NUMBER}",
+            json={"uri": uri},
             timeout=30,
         )
-        resp.raise_for_status()
-        groups = resp.json() or []
-        log.info("Groepscheck: %d groepen gevonden", len(groups))
-        for group in groups:
-            group_id = group.get("id", "")
-            group_name = group.get("name", group_id)
-            if not group_id:
-                continue
-
-            log.info(
-                "Groep '%s': members=%s pendingMembers=%s",
-                group_name,
-                group.get("members"),
-                group.get("pendingMembers"),
-            )
-
-            # Try to accept for every group — if already a member the API returns
-            # a non-2xx response (harmless). If there's a pending invitation it accepts.
-            # This handles UUIDs and phone numbers alike without needing to match.
-            try:
-                accept_resp = requests.put(
-                    f"{SIGNAL_API_URL}/v1/groups/{PHONE_NUMBER}/{group_id}",
-                    json={},
-                    timeout=30,
-                )
-                if accept_resp.ok:
-                    log.info("Groep '%s' bijgewerkt/uitnodiging geaccepteerd", group_name)
-                else:
-                    log.info(
-                        "Groep '%s' PUT: HTTP %s %s",
-                        group_name,
-                        accept_resp.status_code,
-                        accept_resp.text[:200],
-                    )
-            except requests.RequestException as e:
-                log.warning("Fout bij groep '%s': %s", group_name, e)
+        if resp.ok:
+            log.info("Groep succesvol gejoined via link")
+        else:
+            log.info("Join via link: HTTP %s %s", resp.status_code, resp.text[:200])
     except requests.RequestException as e:
-        log.warning("Fout bij ophalen groepen: %s", e)
-    except Exception as e:
-        log.error("Onverwachte fout bij uitnodigingscheck: %s", e)
+        log.warning("Fout bij joinen via groepslink: %s", e)
 
 
 def process_envelope(envelope: dict):
@@ -178,13 +157,9 @@ def process_envelope(envelope: dict):
 def main():
     log.info("Signal bot gestart. Luistert op %s", PHONE_NUMBER)
     setup_profile()
-    last_invitation_check = 0
-    while True:
-        now = time.time()
-        if now - last_invitation_check >= 60:
-            accept_pending_invitations()
-            last_invitation_check = now
+    join_via_link()
 
+    while True:
         try:
             messages = receive_messages()
             for msg in messages:
