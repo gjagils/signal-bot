@@ -19,8 +19,10 @@ client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 # In-memory conversation state per group or DM.
 # key: group_id or phone number
-# value: {"topic", "questions": [str,str,str], "q_index": int, "answers": [], "recipient"}
+# value: {"topic", "questions": [str,...], "answers": [str,...], "recipient"}
 conversation_state: dict = {}
+
+TOTAL_QUESTIONS = 3
 
 
 def receive_messages():
@@ -49,38 +51,70 @@ def send_message(message: str, recipient: str):
     log.info("Bericht verstuurd naar %s", recipient)
 
 
-def generate_questions(topic: str) -> list[str]:
-    """Generate exactly 3 questions for the given topic. Returns a list of 3 strings."""
+SOCRATES_SYSTEM = (
+    "Je bent Socrates op sneakers: nieuwsgierig, scherp, warm, en je luistert écht. "
+    "Je stelt geen standaardvragen — je gaat in op wat er specifiek wordt gezegd en "
+    "legt zachtjes aannames bloot. Je stelt per keer één vraag, in het Nederlands.\n\n"
+    "Elke vraag die je stelt:\n"
+    "- Sluit direct aan op specifieke woorden of wendingen uit het laatste antwoord "
+    "(of het onderwerp als er nog geen antwoord is)\n"
+    "- Maakt aannames zichtbaar zonder oordeel\n"
+    "- Nodigt uit om verder te kijken dan de eerste formulering\n"
+    "- Mag ongemakkelijk dichtbij komen, maar altijd met warmte\n"
+    "- Is onmiskenbaar gemaakt voor dit gesprek — niet inwisselbaar voor een ander\n\n"
+    "Vermijd cliché-openingen als 'Wat bedoel je met...', 'Waarom vind je dit belangrijk', "
+    "'Wat wil je bereiken'. Vermijd vaste templates.\n\n"
+    "Schrijf exact één vraag van 1-2 zinnen. Geen inleiding, geen nummering, geen "
+    "afsluiting. Alleen de vraag zelf."
+)
+
+
+def generate_next_question(
+    topic: str,
+    history: list[tuple[str, str]],
+    question_number: int,
+    total_questions: int = 3,
+) -> str:
+    """Generate the next question based on the topic and prior Q&A history.
+
+    history is a list of (question, answer) tuples for questions already asked and answered.
+    question_number is 1-indexed (1 for first question, etc.).
+    """
+    if question_number == 1:
+        user_content = (
+            f"Iemand in een groep van professionals brengt dit onderwerp in:\n"
+            f"\"{topic}\"\n\n"
+            f"Dit wordt een gesprek van {total_questions} vragen. Stel nu de eerste vraag. "
+            f"Lees het onderwerp alsof je het voor het eerst hoort — welke aanname zit "
+            f"verstopt in de formulering? Welk woord is geladen? Begin daar."
+        )
+    else:
+        history_block = "\n\n".join(
+            f"Vraag {i+1}: {q}\nAntwoord: {a}"
+            for i, (q, a) in enumerate(history)
+        )
+        remaining = total_questions - question_number
+        closing_hint = (
+            " Dit is de laatste vraag — zorg dat hij dieper graaft dan de vorige."
+            if remaining == 0
+            else ""
+        )
+        user_content = (
+            f"Onderwerp van het gesprek:\n\"{topic}\"\n\n"
+            f"Het gesprek tot nu toe:\n\n{history_block}\n\n"
+            f"Stel nu vraag {question_number} van de {total_questions}. Luister écht naar "
+            f"het laatste antwoord: welk woord verdient aandacht? Welke aanname of "
+            f"emotie schemert erdoor? Waar wordt iets gladgestreken of ontweken? "
+            f"Vraag dáár op door.{closing_hint}"
+        )
+
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=1024,
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    f"Je helpt een kleine groep professionals om hun wekelijkse gesprekken "
-                    f"dieper te maken.\n\n"
-                    f"Iemand wil het volgende onderwerp inbrengen: \"{topic}\"\n\n"
-                    f"Genereer precies 3 vragen in het Nederlands, in deze volgorde:\n\n"
-                    f"1. Een verhelderende vraag — vraag door op het onderwerp zelf. "
-                    f"Wat bedoelt de persoon precies? Welke context of definitie zit er achter? "
-                    f"Maak het concreet zonder aannames te doen.\n\n"
-                    f"2. Een verdiepende vraag — over de persoon, niet het onderwerp. "
-                    f"Waarom brengt hij of zij dit nu in? Wat maakt het persoonlijk relevant, "
-                    f"urgent of beladen? Raak aan wat er écht speelt.\n\n"
-                    f"3. Een uitkomstgerichte vraag — wat zou de persoon willen hebben aan "
-                    f"het einde van het gesprek? Welk inzicht, besluit, opluchting of "
-                    f"verschuiving zou helpen?\n\n"
-                    f"Varieer de formulering — vermijd standaardopeningen als 'Wat bedoel je met' "
-                    f"of 'Wat wil je bereiken'. Wees specifiek op het onderwerp. "
-                    f"Uitnodigend, open, niet confronterend. "
-                    f"Begin direct met de drie genummerde vragen, geen inleiding of afsluiting."
-                ),
-            }
-        ],
+        max_tokens=400,
+        system=SOCRATES_SYSTEM,
+        messages=[{"role": "user", "content": user_content}],
     )
-    text = response.content[0].text
-    return _parse_numbered_list(text)
+    return response.content[0].text.strip()
 
 
 def _parse_numbered_list(text: str) -> list[str]:
@@ -238,25 +272,20 @@ def process_envelope(envelope: dict):
     if topic:
         log.info("Topic ontvangen: %s", topic)
         try:
-            questions = generate_questions(topic)
+            q1 = generate_next_question(topic, [], 1, TOTAL_QUESTIONS)
         except Exception as e:
-            log.error("Fout bij genereren vragen: %s", e)
-            return
-
-        if len(questions) < 3:
-            log.error("Verwacht 3 vragen, kreeg %d — tekst: %s", len(questions), questions)
+            log.error("Fout bij genereren vraag 1: %s", e)
             return
 
         conversation_state[state_key] = {
             "topic": topic,
-            "questions": questions,
-            "q_index": 0,
+            "questions": [q1],
             "answers": [],
             "recipient": recipient,
         }
 
         try:
-            send_message(f"📋 *{topic}*\n\n1. {questions[0]}", recipient)
+            send_message(f"📋 *{topic}*\n\n1. {q1}", recipient)
         except Exception as e:
             log.error("Fout bij versturen vraag 1: %s", e)
         return
@@ -271,20 +300,27 @@ def process_envelope(envelope: dict):
         return
 
     state["answers"].append(message_text)
-    state["q_index"] += 1
     recipient = state["recipient"]
+    answered_count = len(state["answers"])
 
-    if state["q_index"] < len(state["questions"]):
-        # Send the next question
-        q_num = state["q_index"] + 1
-        q_text = state["questions"][state["q_index"]]
-        log.info("Versturen vraag %d", q_num)
+    if answered_count < TOTAL_QUESTIONS:
+        # Generate the next question based on topic + full Q&A history
+        history = list(zip(state["questions"], state["answers"]))
+        next_n = answered_count + 1
+        log.info("Genereren vraag %d op basis van %d antwoorden", next_n, answered_count)
         try:
-            send_message(f"{q_num}. {q_text}", recipient)
+            next_q = generate_next_question(state["topic"], history, next_n, TOTAL_QUESTIONS)
         except Exception as e:
-            log.error("Fout bij versturen vraag %d: %s", q_num, e)
+            log.error("Fout bij genereren vraag %d: %s", next_n, e)
+            return
+
+        state["questions"].append(next_q)
+        try:
+            send_message(f"{next_n}. {next_q}", recipient)
+        except Exception as e:
+            log.error("Fout bij versturen vraag %d: %s", next_n, e)
     else:
-        # All 3 questions answered — generate and send session summary
+        # All questions answered — generate and send session summary
         log.info("Alle vragen beantwoord, samenvatting genereren voor topic: %s", state["topic"])
         try:
             summary = generate_summary(state["topic"], state["questions"], state["answers"])
