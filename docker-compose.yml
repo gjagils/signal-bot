@@ -1,8 +1,6 @@
 services:
   signal-cli-rest-api:
     image: bbernhard/signal-cli-rest-api:latest
-    ports:
-      - "6732:8080"
     volumes:
       - signal-cli-data:/home/.local/share/signal-cli
     environment:
